@@ -202,7 +202,7 @@ return`<div class="grid">${mc('Task completion rate',tot?Math.round(dn/tot*100)+
 <div class="card c7"><h2>Last 14 days</h2>${bars(d14.map(d=>+d.slice(8)),d14.map(d=>doneIn(d,addD(d,1))),d14.map(d=>fmin(d,addD(d,1))))}</div><div class="card c5"><h2>Last 6 months</h2>${bars(mb.map(x=>x[0]),mb.map(x=>x[1]),mb.map(x=>x[2]))}</div>
 <div class="card c12"><h2>How these are calculated</h2><p class="mu">Completion rate = completed tasks ÷ all tasks. Habit consistency = completions in 30 days ÷ expected (daily = 30, weekly = target × 30 ÷ 7). Productivity on the dashboard = this week’s due tasks that are completed. These are simple ratios of your own records, not validated measures.</p></div></div>`}
 const tzs=()=>{try{return Intl.supportedValuesOf('timeZone')}catch(e){return[D.set.tz]}};
-const vSet=()=>`<div class="grid"><form class="card c6" id="pf"><h2 style="margin-bottom:12px">Preferences</h2>${fld('tz','Timezone','select',D.set.tz,tzs())}${fld('theme','Appearance','select',D.set.theme,['dark','light'])}${fld('sound','Sound when a session ends','select',D.set.sound?'on':'off',['on','off'])}<button class="b">Save changes</button></form><div class="card c6"><h2>Your data</h2><p class="mu" style="margin:6px 0 12px">${DB&&U.id?'Synced to your claude.ai account.':'Saved on this device only. Open the page signed in to claude.ai to sync.'}</p><div class="row"><button data-a="ex">Export my data</button><button class="b danger" data-a="rs">Reset all data</button></div></div></div>`;
+const vSet=()=>`<div class="grid"><form class="card c6" id="pf"><h2 style="margin-bottom:12px">Preferences</h2>${fld('tz','Timezone','select',D.set.tz,tzs())}${fld('theme','Appearance','select',D.set.theme,['dark','light'])}${fld('sound','Sound when a session ends','select',D.set.sound?'on':'off',['on','off'])}<button class="b">Save changes</button></form><div class="card c6"><h2>Your data</h2><p class="mu" style="margin:6px 0 12px">${DB&&U.id?'Synced to your claude.ai account.':'Saved on this device only. Open the page signed in to claude.ai to sync.'}</p><div class="row"><button data-a="ex">Export my data</button>${U.local?'<button data-a="lo">Sign out</button>':''}<button class="b danger" data-a="rs">Reset all data</button></div></div></div>`;
 
 /* ---------- shell ---------- */
 const NAV=[['dashboard','Dashboard'],['tasks','My Tasks'],['habits','Habits'],['focus','Focus'],['calendar','Calendar'],['goals','Goals'],['analytics','Analytics'],['community','Community'],['settings','Settings']];
@@ -220,7 +220,7 @@ function paint(chat){if(V==='community'){const l=$('#lb'),c=$('#cl'),ct=$('#ct')
 function sub(){if(!DB)return;DB.collection('lb').onSnapshot(async s=>{LBD=s.docs.map(d=>({...d.data(),id:d.id})).filter(x=>x.week===mon(today()));await names(LBD.map(x=>x.id));paint()},()=>{});
 DB.collection('chat').orderBy('at','desc').limit(60).onSnapshot(async s=>{CHD=s.docs.map(d=>({...d.data(),id:d.id})).reverse();await names(CHD.map(x=>x.uid));paint(true)},()=>{})}
 const score=()=>{const[a,b]=wk(0);return{tasks:doneIn(a,b),focus:fmin(a,b),habits:D.hc.filter(c=>c.d>=a&&c.d<b).length}};
-function save(){st.set('dx:cur',D);if(!DB||!U.id)return;clearTimeout(sy);sy=setTimeout(async()=>{try{const s=score();await DB.doc('data/users/'+U.id+'/app').set({json:JSON.stringify(D)});await DB.doc('lb/'+U.id).set({...s,score:s.tasks*10+s.focus+s.habits*5,streak:dstreak(),disc:disc(),week:mon(today()),at:Date.now()})}catch(e){if(!warned){warned=true;toast('Could not sync. Changes are saved on this device.')}}},900)}
+function save(){st.set(CK,D);if(!DB||!U.id)return;clearTimeout(sy);sy=setTimeout(async()=>{try{const s=score();await DB.doc('data/users/'+U.id+'/app').set({json:JSON.stringify(D)});await DB.doc('lb/'+U.id).set({...s,score:s.tasks*10+s.focus+s.habits*5,streak:dstreak(),disc:disc(),week:mon(today()),at:Date.now()})}catch(e){if(!warned){warned=true;toast('Could not sync. Changes are saved on this device.')}}},900)}
 async function sendChat(f){const t=f.text.value.trim().slice(0,500);if(!t||!DB||!U.id||Date.now()-lastSend<1000)return;lastSend=Date.now();f.text.value='';try{await (CT.dm?DB.collection('dm').add({from:U.id,to:CT.dm,text:t,at:Date.now()}):DB.collection('chat').add({uid:U.id,text:t,at:Date.now()}))}catch(e){f.text.value=t;toast('Message not sent. You may have view-only access.')}}
 function go(){document.documentElement.dataset.theme=D.set.theme;const views={dashboard:vDash,tasks:vTasks,habits:vHabits,focus:vFocus,calendar:vCal,goals:vGoals,analytics:vAnal,community:vComm,settings:vSet};if(!views[V])V='dashboard';
 const fresh=LV!==V;LV=V;const init=(U.name[0]||'?').toUpperCase();
@@ -257,9 +257,29 @@ document.addEventListener('submit',e=>{const f=e.target;if(f.id==='pf'){e.preven
 const use=n=>Promise.race([window.claude.use(n),new Promise(r=>setTimeout(()=>r(null),8000))]);
 async function boot(){let me=null;try{USR=await use('user');me=USR&&await USR.me()}catch(e){USR=null}
 try{DB=await use('db')}catch(e){DB=null}
+if(!me){const k=st.get('dx:session'),us=st.get('dx:users')||{};return us[k]?start(k):authView()}
 U={id:me?.id||null,name:me?.name||'there',owner:!!me?.isOwner};D=DEF();let got=false;
 if(DB&&U.id){try{const s=await DB.doc('data/users/'+U.id+'/app').get();if(s.exists){D=Object.assign(DEF(),JSON.parse(s.data().json));got=true}}catch(e){}}
 if(!got){const l=st.get('dx:cur');if(l)D=Object.assign(DEF(),l)}
 V=location.hash.slice(1)||'dashboard';go();sub();subDM()}
+/* ---------- local accounts (used outside claude.ai) ---------- */
+let CK='dx:cur',AM='in';
+const un=s=>String(s||'').trim().toLowerCase();
+function authView(){const up=AM==='up';
+$('#app').innerHTML=`<main style="min-height:100vh;display:grid;place-items:center;padding:20px"><form id="af" class="card" style="width:min(400px,100%)"><div class="logo" style="margin:0 auto 12px;width:72px">${LOGO}</div><h1 style="text-align:center;font-size:26px">DISCPLIX</h1><p class="mu" style="text-align:center;margin:4px 0 16px">${up?'Create your account to get started.':'Welcome back. Sign in to continue.'}</p><div class="tabs" style="margin-bottom:14px;justify-content:center"><button type="button" class="${up?'':'b'}" data-a="am" data-m="in">Sign in</button><button type="button" class="${up?'b':''}" data-a="am" data-m="up">Create account</button></div>${up?fld('name','Display name'):''}${fld('user','Username')}${fld('pw','Password','password')}<p class="er" role="alert"></p><button class="b" style="width:100%">${up?'Create account':'Sign in'}</button><p class="mu" style="font-size:12px;margin-top:12px;text-align:center">Accounts and data are stored on this device only.</p></form></main>`;
+const f=$('#af');f.user.autocomplete='username';f.pw.autocomplete=up?'new-password':'current-password';f.user.focus()}
+function start(k){const u=(st.get('dx:users')||{})[k];CK='dx:u:'+k;U={id:null,name:u.name,owner:false,local:k};D=Object.assign(DEF(),st.get(CK)||{});V=location.hash.slice(1)||'dashboard';go()}
+A.am=d=>{AM=d.m;authView()};
+A.lo=()=>{st.set('dx:session',null);location.hash='';location.reload()};
+document.addEventListener('submit',async e=>{const f=e.target;if(f.id!=='af')return;e.preventDefault();
+const er=m=>{f.querySelector('.er').textContent=m},k=un(f.user.value),pw=f.pw.value,us=st.get('dx:users')||{};
+if(!/^[a-z0-9_.-]{3,24}$/.test(k))return er('Username: 3–24 letters, numbers, . _ -');
+if(AM==='up'){if(pw.length<6)return er('Password must be at least 6 characters.');if(us[k])return er('That username is taken.');
+const salt=rid();us[k]={name:(f.elements.name.value.trim()||k).slice(0,40),salt,h:await hash(pw,salt)};
+const first=!Object.keys(st.get('dx:users')||{}).length,old=st.get('dx:cur');if(first&&old)st.set('dx:u:'+k,old);
+st.set('dx:users',us)}
+else{const u=us[k];if(!u||await hash(pw,u.salt)!==u.h)return er('Wrong username or password.')}
+st.set('dx:session',k);start(k)});
+
 boot();
 </script></body></html>
